@@ -1,0 +1,18 @@
+# Build
+target/
+
+# NimCode local artifacts
+.nimcode/
+.nimcode.json
+
+# Legacy
+.claude/
+.claw/
+.clawhip/
+
+# Environment
+.env
+
+# OS
+.DS_Store
+Thumbs.db
