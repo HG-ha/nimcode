@@ -743,6 +743,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             cli.run_turn_with_output(&effective_prompt, output_format, compact)?;
         }
         CliAction::Doctor { output_format } => run_doctor(output_format)?,
+        CliAction::Upgrade => run_self_upgrade()?,
         CliAction::Acp { output_format } => print_acp_status(output_format)?,
         CliAction::State { output_format } => run_worker_state(output_format)?,
         CliAction::Init { output_format } => run_init(output_format)?,
@@ -899,6 +900,7 @@ enum CliAction {
         reasoning_effort: Option<String>,
         allow_broad_cwd: bool,
     },
+    Upgrade,
     HelpTopic(LocalHelpTopic),
     // prompt-mode formatting is only supported for non-interactive runs
     Help {
@@ -1412,7 +1414,7 @@ fn parse_single_word_command_alias(
     let verb = &rest[0];
     let is_diagnostic = matches!(
         verb.as_str(),
-        "help" | "version" | "status" | "sandbox" | "doctor" | "state"
+        "help" | "version" | "upgrade" | "update" | "status" | "sandbox" | "doctor" | "state"
     );
 
     if is_diagnostic && rest.len() > 1 {
@@ -1449,6 +1451,7 @@ fn parse_single_word_command_alias(
         })),
         "sandbox" => Some(Ok(CliAction::Sandbox { output_format })),
         "doctor" => Some(Ok(CliAction::Doctor { output_format })),
+        "upgrade" | "update" => Some(Ok(CliAction::Upgrade)),
         "state" => Some(Ok(CliAction::State { output_format })),
         // #146: let `config` and `diff` fall through to parse_subcommand
         // where they are wired as pure-local introspection, instead of
@@ -1675,6 +1678,8 @@ fn suggest_similar_subcommand(input: &str) -> Option<Vec<String>> {
     const KNOWN_SUBCOMMANDS: &[&str] = &[
         "help",
         "version",
+        "upgrade",
+        "update",
         "status",
         "sandbox",
         "doctor",
@@ -2323,6 +2328,112 @@ fn render_doctor_report() -> Result<DoctorReport, Box<dyn std::error::Error>> {
             check_system_health(&cwd, config.as_ref().ok()),
         ],
     })
+}
+
+fn run_self_upgrade() -> Result<(), Box<dyn std::error::Error>> {
+    use std::process::Command;
+
+    println!("{}", t("NimCode self-upgrade", "NimCode 自动升级"));
+    println!();
+    println!("  {} {VERSION}", t("Current version :", "当前版本："));
+    println!("{}", t("  Checking for updates...", "  正在检查更新..."));
+
+    let current_exe = env::current_exe()?;
+    let install_dir = current_exe
+        .parent()
+        .ok_or("cannot determine install directory")?;
+
+    if cfg!(windows) {
+        // Use PowerShell to fetch latest version, download, and replace binary
+        let script = format!(
+            r#"
+$ErrorActionPreference = 'Stop'
+$repo = '{slug}'
+$release = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest"
+$version = $release.tag_name -replace '^v', ''
+if ($version -eq '{current}') {{
+    Write-Host '  Already up to date (v{current}).'
+    exit 0
+}}
+Write-Host "  Latest version  : $version"
+Write-Host ''
+$target = 'x86_64-pc-windows-msvc'
+$url = "https://github.com/$repo/releases/download/v$version/nimcode-$target.zip"
+$tmp = Join-Path $env:TEMP "nimcode-upgrade-$(Get-Random)"
+New-Item -ItemType Directory -Force $tmp | Out-Null
+$zip = Join-Path $tmp 'nimcode.zip'
+Write-Host "  Downloading nimcode-$target.zip..."
+Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+Expand-Archive -Path $zip -DestinationPath $tmp -Force
+$src = Join-Path $tmp 'nimcode.exe'
+$dst = '{exe}'
+$bak = '{exe}.old'
+if (Test-Path $bak) {{ Remove-Item $bak -Force }}
+Rename-Item $dst $bak -Force
+Copy-Item $src $dst -Force
+Remove-Item $bak -Force -ErrorAction SilentlyContinue
+Remove-Item $tmp -Recurse -Force
+Write-Host ''
+Write-Host "  Upgraded from v{current} to v$version"
+"#,
+            slug = OFFICIAL_REPO_SLUG,
+            current = VERSION,
+            exe = current_exe.display(),
+        );
+        let status = Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .status()?;
+        if !status.success() {
+            return Err("upgrade failed".into());
+        }
+    } else {
+        // Use curl + tar on Linux/macOS
+        let arch = if cfg!(target_arch = "aarch64") {
+            "aarch64"
+        } else {
+            "x86_64"
+        };
+        let os_part = if cfg!(target_os = "macos") {
+            "apple-darwin"
+        } else {
+            "unknown-linux-gnu"
+        };
+        let target = format!("{arch}-{os_part}");
+
+        let script = format!(
+            r#"
+set -e
+REPO='{slug}'
+VERSION=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name"' | head -1 | sed -E 's/.*"v([^"]+)".*/\1/')
+if [ "$VERSION" = "{current}" ]; then
+    echo '  Already up to date (v{current}).'
+    exit 0
+fi
+echo "  Latest version  : $VERSION"
+echo ''
+URL="https://github.com/$REPO/releases/download/v$VERSION/nimcode-{target}.tar.gz"
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+echo "  Downloading nimcode-{target}.tar.gz..."
+curl -fsSL "$URL" -o "$TMPDIR/nimcode.tar.gz"
+tar xzf "$TMPDIR/nimcode.tar.gz" -C "$TMPDIR"
+chmod +x "$TMPDIR/nimcode"
+mv "$TMPDIR/nimcode" "{exe}"
+echo ''
+echo "  Upgraded from v{current} to v$VERSION"
+"#,
+            slug = OFFICIAL_REPO_SLUG,
+            current = VERSION,
+            target = target,
+            exe = current_exe.display(),
+        );
+        let status = Command::new("sh").arg("-c").arg(&script).status()?;
+        if !status.success() {
+            return Err("upgrade failed".into());
+        }
+    }
+
+    Ok(())
 }
 
 fn run_doctor(output_format: CliOutputFormat) -> Result<(), Box<dyn std::error::Error>> {
@@ -5171,10 +5282,13 @@ impl LiveCli {
                 println!("{}", format_cost_report(usage));
                 false
             }
+            SlashCommand::Upgrade => {
+                run_self_upgrade()?;
+                false
+            }
             SlashCommand::Login
             | SlashCommand::Logout
             | SlashCommand::Vim
-            | SlashCommand::Upgrade
             | SlashCommand::Share
             | SlashCommand::Feedback
             | SlashCommand::Files

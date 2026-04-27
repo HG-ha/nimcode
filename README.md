@@ -3,7 +3,11 @@
 </p>
 
 <h1 align="center">NimCode</h1>
-<p align="center">基于 NVIDIA NIM 的命令行 AI 编程助手</p>
+<p align="center">使用 NVIDIA NIM 的免费模型驱动 Claw Code，这就是 NimCode</p>
+
+<p align="center">
+  <a href="README_EN.md">English</a> | 中文
+</p>
 
 ## 安装
 
@@ -35,6 +39,12 @@ cargo install --path crates/rusty-claude-cli
 
 从 [Releases](https://github.com/HG-ha/nimcode/releases) 下载对应平台的二进制文件。
 
+### 升级
+
+```bash
+nimcode upgrade
+```
+
 ## 快速开始
 
 ```bash
@@ -53,10 +63,11 @@ nimcode
 - **NVIDIA NIM 后端** — 支持 NIM 平台全部模型（DeepSeek、Kimi、GLM、Qwen 等）
 - **交互式 REPL** — Tab 补全、命令历史、斜杠命令
 - **中英双语** — 根据系统语言自动切换，`/lang` 手动切换
-- **动态模型切换** — `/model` 实时搜索 NIM 模型目录
+- **动态模型切换** — `/model` 模糊搜索 NIM 模型目录
 - **开发工具** — 内置文件读写、搜索、Git、Shell 执行等
 - **会话管理** — 自动保存，`/resume` 恢复历史对话
 - **流式输出** — SSE 流式响应，支持推理内容展示
+- **自动升级** — `nimcode upgrade` 一键升级到最新版
 - **MCP / 插件** — 可扩展架构
 
 ## 常用命令
@@ -68,6 +79,7 @@ nimcode
 | `/model deepseek` | 模糊搜索并切换模型 |
 | `/lang zh` | 切换中文 |
 | `/status` | 查看会话状态 |
+| `/upgrade` | 升级到最新版 |
 | `/diff` → `/commit` | 查看改动并提交 |
 
 ## 环境变量
