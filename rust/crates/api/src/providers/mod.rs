@@ -59,49 +59,8 @@ const NIM_METADATA: ProviderMetadata = ProviderMetadata {
     default_base_url: openai_compat::DEFAULT_NIM_BASE_URL,
 };
 
-/// Short alias -> full NIM model id. Mirrors the alias table that the
-/// upstream NimCode CLI exposes on Anthropic models so existing muscle memory
-/// (`opus`, `sonnet`, `haiku`, `kimi`, etc.) keeps working without forcing
-/// users to type vendor-prefixed slugs.
-///
-/// All ids in the right column are taken from `GET /v1/models` against
-/// `https://integrate.api.nvidia.com/v1`. Adjust if NIM rotates them.
-const MODEL_ALIASES: &[(&str, &str)] = &[
-    // Default flagship — DeepSeek V4 Pro on NIM.
-    ("opus", "deepseek-ai/deepseek-v4-pro"),
-    ("sonnet", "deepseek-ai/deepseek-v4-pro"),
-    ("haiku", "deepseek-ai/deepseek-v4-flash"),
-    ("glm", "z-ai/glm-5.1"),
-    ("glm5", "z-ai/glm5"),
-    ("glm4", "z-ai/glm4.7"),
-    // Moonshot Kimi K2 family.
-    ("kimi", "moonshotai/kimi-k2.5"),
-    ("kimi-k2", "moonshotai/kimi-k2.5"),
-    ("kimi-thinking", "moonshotai/kimi-k2-thinking"),
-    // MiniMax M2 family.
-    ("minimax", "minimaxai/minimax-m2.5"),
-    ("minimax-m2", "minimaxai/minimax-m2.5"),
-    ("minimax-m2-7", "minimaxai/minimax-m2.7"),
-    // DeepSeek V3 / V4 (latest catalog has v3.2 and the v4 preview).
-    ("deepseek", "deepseek-ai/deepseek-v3.2"),
-    ("deepseek-v3", "deepseek-ai/deepseek-v3.2"),
-    ("deepseek-v4", "deepseek-ai/deepseek-v4-pro"),
-    ("deepseek-flash", "deepseek-ai/deepseek-v4-flash"),
-    // Qwen 3 family.
-    ("qwen", "qwen/qwen3-coder-480b-a35b-instruct"),
-    ("qwen-coder", "qwen/qwen3-coder-480b-a35b-instruct"),
-    ("qwen-next", "qwen/qwen3-next-80b-a3b-instruct"),
-    ("qwen-thinking", "qwen/qwen3-next-80b-a3b-thinking"),
-    // Legacy aliases that used to map to xAI / OpenAI now redirect to a
-    // sensible NIM default so older shells / scripts keep working. NIM
-    // does not currently host any `x-ai/grok-*` model.
-    ("grok", "deepseek-ai/deepseek-v4-pro"),
-    ("grok-mini", "deepseek-ai/deepseek-v4-flash"),
-];
-
-/// Strip the `nvidia_nim/` namespace prefix that the CLI accepts for parity
-/// with the upstream. Both `nvidia_nim/deepseek-ai/deepseek-v4-pro` and
-/// the bare `deepseek-ai/deepseek-v4-pro` resolve to the same upstream model id.
+/// Strip the optional `nvidia_nim/` or `nim/` namespace prefix so the bare
+/// `vendor/model` id can be sent directly to the NIM API.
 fn strip_namespace(model: &str) -> &str {
     model
         .strip_prefix("nvidia_nim/")
@@ -109,17 +68,12 @@ fn strip_namespace(model: &str) -> &str {
         .unwrap_or(model)
 }
 
+/// Canonicalize a model string: strip namespace prefix and trim whitespace.
+/// Returns the bare `vendor/model` id ready for the NIM API.
 #[must_use]
 pub fn resolve_model_alias(model: &str) -> String {
     let trimmed = model.trim();
     let stripped = strip_namespace(trimmed);
-    let lower = stripped.to_ascii_lowercase();
-    if let Some((_, target)) = MODEL_ALIASES
-        .iter()
-        .find(|(alias, _)| alias.eq_ignore_ascii_case(&lower))
-    {
-        return (*target).to_string();
-    }
     stripped.to_string()
 }
 
@@ -301,26 +255,13 @@ mod tests {
     };
 
     #[test]
-    fn resolves_aliases_to_nim_model_ids() {
-        assert_eq!(resolve_model_alias("opus"), "deepseek-ai/deepseek-v4-pro");
-        assert_eq!(resolve_model_alias("sonnet"), "deepseek-ai/deepseek-v4-pro");
-        assert_eq!(resolve_model_alias("haiku"), "deepseek-ai/deepseek-v4-flash");
-        assert_eq!(resolve_model_alias("glm"), "z-ai/glm-5.1");
-        assert_eq!(resolve_model_alias("kimi"), "moonshotai/kimi-k2.5");
-        assert_eq!(resolve_model_alias("deepseek"), "deepseek-ai/deepseek-v3.2");
-        assert_eq!(
-            resolve_model_alias("deepseek-v4"),
-            "deepseek-ai/deepseek-v4-pro"
-        );
-    }
-
-    #[test]
     fn strips_nvidia_nim_namespace_prefix() {
         assert_eq!(
             resolve_model_alias("nvidia_nim/z-ai/glm-5.1"),
             "z-ai/glm-5.1"
         );
         assert_eq!(resolve_model_alias("nim/z-ai/glm-5.1"), "z-ai/glm-5.1");
+        assert_eq!(resolve_model_alias("qwen/qwen3.5-122b-a10b"), "qwen/qwen3.5-122b-a10b");
     }
 
     #[test]
@@ -350,7 +291,7 @@ mod tests {
     fn known_nim_models_carry_token_limit_metadata() {
         let glm = model_token_limit("z-ai/glm-5.1").expect("glm-5.1 limits");
         assert_eq!(glm.context_window_tokens, 131_072);
-        let kimi = model_token_limit("kimi").expect("kimi alias limits");
+        let kimi = model_token_limit("moonshotai/kimi-k2.5").expect("kimi limits");
         assert_eq!(kimi.context_window_tokens, 256_000);
     }
 

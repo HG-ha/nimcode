@@ -65,15 +65,37 @@ impl Completer for SlashCommandHelper {
             return Ok((0, Vec::new()));
         };
 
-        let matches = self
-            .completions
-            .iter()
-            .filter(|candidate| candidate.starts_with(prefix))
-            .map(|candidate| Pair {
-                display: candidate.clone(),
-                replacement: candidate.clone(),
-            })
-            .collect();
+        let is_model_ctx = prefix.starts_with("/model ") || prefix.starts_with("/models ");
+        let matches: Vec<Pair> = if is_model_ctx {
+            let query = prefix
+                .strip_prefix("/models ")
+                .or_else(|| prefix.strip_prefix("/model "))
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            self.completions
+                .iter()
+                .filter(|c| {
+                    if let Some(model_part) = c.strip_prefix("/model ").or_else(|| c.strip_prefix("/models ")) {
+                        model_part.to_ascii_lowercase().contains(&query)
+                    } else {
+                        false
+                    }
+                })
+                .map(|candidate| Pair {
+                    display: candidate.clone(),
+                    replacement: candidate.clone(),
+                })
+                .collect()
+        } else {
+            self.completions
+                .iter()
+                .filter(|candidate| candidate.starts_with(prefix))
+                .map(|candidate| Pair {
+                    display: candidate.clone(),
+                    replacement: candidate.clone(),
+                })
+                .collect()
+        };
 
         Ok((0, matches))
     }
@@ -86,6 +108,30 @@ impl Hinter for SlashCommandHelper {
         if pos != line.len() || !line.starts_with('/') || line.is_empty() {
             return None;
         }
+
+        let is_model_ctx = line.starts_with("/model ") || line.starts_with("/models ");
+        if is_model_ctx {
+            let query = line
+                .strip_prefix("/models ")
+                .or_else(|| line.strip_prefix("/model "))
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            if query.is_empty() {
+                return None;
+            }
+            let mut best: Option<&str> = None;
+            for candidate in &self.completions {
+                if let Some(model_part) = candidate.strip_prefix("/model ").or_else(|| candidate.strip_prefix("/models ")) {
+                    if model_part.to_ascii_lowercase().contains(&query) && candidate.len() > line.len() {
+                        if best.map_or(true, |b| candidate.len() < b.len()) {
+                            best = Some(candidate);
+                        }
+                    }
+                }
+            }
+            return best.map(|b| format!("  ({})", &b["/model ".len()..]));
+        }
+
         let mut best: Option<&str> = None;
         for candidate in &self.completions {
             if candidate.len() > line.len() && candidate.starts_with(line) {

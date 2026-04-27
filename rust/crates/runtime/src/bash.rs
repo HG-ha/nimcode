@@ -269,7 +269,7 @@ fn prepare_command(
     #[cfg(windows)]
     let mut prepared = {
         let mut cmd = Command::new("cmd.exe");
-        cmd.args(["/C", command]);
+        cmd.args(["/C", &format!("chcp 65001 >nul & {command}")]);
         cmd
     };
     #[cfg(not(windows))]
@@ -310,7 +310,7 @@ fn prepare_tokio_command(
     #[cfg(windows)]
     let mut prepared = {
         let mut cmd = TokioCommand::new("cmd.exe");
-        cmd.args(["/C", command]);
+        cmd.args(["/C", &format!("chcp 65001 >nul & {command}")]);
         cmd
     };
     #[cfg(not(windows))]

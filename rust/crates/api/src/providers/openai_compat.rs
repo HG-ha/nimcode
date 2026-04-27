@@ -1057,19 +1057,12 @@ pub fn is_reasoning_model(model: &str) -> bool {
 /// Strip routing prefix (e.g., "openai/gpt-4" → "gpt-4") for the wire.
 /// The prefix is used only to select transport; the backend expects the
 /// bare model id.
+/// After the NIM-only refactor, model ids like `qwen/qwen3.5-122b-a10b` or
+/// `deepseek-ai/deepseek-v4-pro` are sent to the NIM API verbatim — no
+/// routing prefix should be stripped. The `nvidia_nim/` namespace is already
+/// removed earlier by `resolve_model_alias`.
 fn strip_routing_prefix(model: &str) -> &str {
-    if let Some(pos) = model.find('/') {
-        let prefix = &model[..pos];
-        // Only strip if the prefix before "/" is a known routing prefix,
-        // not if "/" appears in the middle of the model name for other reasons.
-        if matches!(prefix, "openai" | "xai" | "grok" | "qwen" | "kimi") {
-            &model[pos + 1..]
-        } else {
-            model
-        }
-    } else {
-        model
-    }
+    model
 }
 
 /// Estimate the serialized JSON size of a request payload in bytes.
@@ -2555,10 +2548,9 @@ mod tests {
     }
 
     #[test]
-    fn strip_routing_prefix_strips_kimi_provider_prefix() {
-        // US-023: kimi prefix should be stripped for wire format
-        assert_eq!(super::strip_routing_prefix("kimi/kimi-k2.5"), "kimi-k2.5");
-        assert_eq!(super::strip_routing_prefix("kimi-k2.5"), "kimi-k2.5"); // no prefix, unchanged
-        assert_eq!(super::strip_routing_prefix("kimi/kimi-k1.5"), "kimi-k1.5");
+    fn strip_routing_prefix_passes_nim_model_ids_through() {
+        assert_eq!(super::strip_routing_prefix("qwen/qwen3.5-122b-a10b"), "qwen/qwen3.5-122b-a10b");
+        assert_eq!(super::strip_routing_prefix("moonshotai/kimi-k2.5"), "moonshotai/kimi-k2.5");
+        assert_eq!(super::strip_routing_prefix("deepseek-ai/deepseek-v4-pro"), "deepseek-ai/deepseek-v4-pro");
     }
 }

@@ -59,7 +59,7 @@ use tools::{
 /// NVIDIA NIM (`integrate.api.nvidia.com/v1`). Override with `--model` or
 /// the `NIMCODE_MODEL` env var. The `nvidia_nim/` namespace prefix is accepted
 /// for parity with `free-claude-code`'s alias scheme.
-const DEFAULT_MODEL: &str = "nvidia_nim/deepseek-ai/deepseek-v4-pro";
+const DEFAULT_MODEL: &str = "nvidia_nim/qwen/qwen3.5-122b-a10b";
 
 /// #148: Model provenance for `nimcode status` JSON/text output. Records where
 /// the resolved model string came from so users don't have to re-read argv
@@ -1778,45 +1778,24 @@ fn levenshtein_distance(left: &str, right: &str) -> usize {
     previous[right_chars.len()]
 }
 
-/// CLI-level alias resolver. After the NIM-only refactor, the canonical
-/// `opus` / `sonnet` / `haiku` aliases all resolve to NVIDIA NIM-served
-/// model ids. The deeper alias table (`glm`, `kimi`, `minimax`, etc.) lives
-/// in `api::resolve_model_alias`; this function only handles the legacy
-/// short names that the CLI documents.
-fn resolve_model_alias(model: &str) -> &str {
-    match model {
-        "opus" | "sonnet" => "deepseek-ai/deepseek-v4-pro",
-        "haiku" => "deepseek-ai/deepseek-v4-flash",
-        _ => model,
-    }
-}
-
-/// Resolve a model name through user-defined config aliases first, then fall
-/// back to the built-in alias table. This is the entry point used wherever a
-/// user-supplied model string is about to be dispatched to a provider.
+/// Resolve a model name: strip `nvidia_nim/` prefix and check user config aliases.
 fn resolve_model_alias_with_config(model: &str) -> String {
     let trimmed = model.trim();
     if let Some(resolved) = config_alias_for_current_dir(trimmed) {
-        return resolve_model_alias(&resolved).to_string();
+        return api::resolve_model_alias(&resolved);
     }
-    resolve_model_alias(trimmed).to_string()
+    api::resolve_model_alias(trimmed)
 }
 
 /// Validate model syntax at parse time.
-/// Accepts: known aliases (opus, sonnet, haiku) or provider/model pattern.
+/// Accepts: vendor/model format (e.g. `qwen/qwen3.5-122b-a10b`).
 /// Rejects: empty, whitespace-only, strings with spaces, or invalid chars.
 fn validate_model_syntax(model: &str) -> Result<(), String> {
     let trimmed = model.trim();
     if trimmed.is_empty() {
         return Err("model string cannot be empty".to_string());
     }
-    // Known aliases are always valid. We probe the api crate's alias table
-    // (the master list — any new alias added there automatically becomes
-    // valid here) by checking whether the resolver maps the input to a
-    // different string.
-    if resolve_model_alias(trimmed) != trimmed {
-        return Ok(());
-    }
+    // After removing aliases, model ids must be vendor/model format.
     // Check for spaces (malformed)
     if trimmed.contains(' ') {
         return Err(format!(
@@ -1837,7 +1816,7 @@ fn validate_model_syntax(model: &str) -> Result<(), String> {
     let parts: Vec<&str> = stripped.split('/').collect();
     if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
         let err_msg = format!(
-            "invalid model syntax: '{trimmed}'. Expected vendor/model (e.g., `deepseek-ai/deepseek-v4-pro`, `moonshotai/kimi-k2.5`, `qwen/qwen3-coder-480b-a35b-instruct`) or a known alias (opus, sonnet, haiku, glm, kimi, minimax, deepseek, qwen). The optional `nvidia_nim/` namespace prefix is also accepted."
+            "invalid model syntax: '{trimmed}'. Expected vendor/model format (e.g., `qwen/qwen3.5-122b-a10b`, `deepseek-ai/deepseek-v4-pro`). Use `/model list` to see available models."
         );
         return Err(err_msg);
     }
@@ -4239,6 +4218,10 @@ fn run_repl(
     let resolved_model = resolve_repl_model(model);
     let mut cli = LiveCli::new(resolved_model, true, allowed_tools, permission_mode)?;
     cli.set_reasoning_effort(reasoning_effort);
+    // Pre-fetch model catalog in background so tab completion works immediately
+    let _catalog_handle = thread::spawn(|| {
+        let _ = ensure_nim_model_catalog();
+    });
     let mut editor =
         input::LineEditor::new("> ", cli.repl_completion_candidates().unwrap_or_default());
     println!("{}", cli.startup_banner());
@@ -4276,12 +4259,16 @@ fn run_repl(
                 if let Some(prompt) = try_resolve_bare_skill_prompt(&cwd, &trimmed) {
                     editor.push_history(input);
                     cli.record_prompt_history(&trimmed);
-                    cli.run_turn(&prompt)?;
+                    if let Err(error) = cli.run_turn(&prompt) {
+                        eprintln!("\n{error}\n");
+                    }
                     continue;
                 }
                 editor.push_history(input);
                 cli.record_prompt_history(&trimmed);
-                cli.run_turn(&trimmed)?;
+                if let Err(error) = cli.run_turn(&trimmed) {
+                    eprintln!("\n{error}\n");
+                }
             }
             input::ReadOutcome::Cancel => {}
             input::ReadOutcome::Exit => {
@@ -4805,6 +4792,7 @@ impl LiveCli {
         allowed_tools: Option<AllowedToolSet>,
         permission_mode: PermissionMode,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        let model = api::resolve_model_alias(&model);
         let system_prompt = build_system_prompt()?;
         let session_state = new_cli_session()?;
         let session = create_managed_session_handle(&session_state.session_id)?;
@@ -4957,7 +4945,8 @@ impl LiveCli {
                     TerminalRenderer::new().color_theme(),
                     &mut stdout,
                 )?;
-                Err(Box::new(error))
+                eprintln!("{error}\n");
+                Ok(())
             }
         }
     }
@@ -5158,7 +5147,11 @@ impl LiveCli {
             }
             SlashCommand::Skills { args } => {
                 match classify_skills_slash_command(args.as_deref()) {
-                    SkillSlashDispatch::Invoke(prompt) => self.run_turn(&prompt)?,
+                    SkillSlashDispatch::Invoke(prompt) => {
+                        if let Err(error) = self.run_turn(&prompt) {
+                            eprintln!("\n{error}\n");
+                        }
+                    }
                     SkillSlashDispatch::Local => {
                         Self::print_skills(args.as_deref(), CliOutputFormat::Text)?;
                     }
@@ -8967,9 +8960,6 @@ fn slash_command_completion_candidates_with_sessions(
         "/export ",
         "/issue ",
         "/model ",
-        "/model opus",
-        "/model sonnet",
-        "/model haiku",
         "/permissions ",
         "/permissions read-only",
         "/permissions workspace-write",
@@ -8996,7 +8986,7 @@ fn slash_command_completion_candidates_with_sessions(
     }
 
     if !model.trim().is_empty() {
-        completions.insert(format!("/model {}", resolve_model_alias(model)));
+        completions.insert(format!("/model {}", api::resolve_model_alias(model)));
         completions.insert(format!("/model {model}"));
     }
 
@@ -9006,12 +8996,8 @@ fn slash_command_completion_candidates_with_sessions(
     // perform a network fetch from the completer to keep keystrokes snappy.
     completions.insert("/model list".to_string());
     completions.insert("/model refresh".to_string());
-    completions.insert("/models".to_string());
-    completions.insert("/models list".to_string());
-    completions.insert("/models refresh".to_string());
     for id in cached_nim_model_catalog() {
         completions.insert(format!("/model {id}"));
-        completions.insert(format!("/models {id}"));
     }
 
     if let Some(active_session_id) = active_session_id.filter(|value| !value.trim().is_empty()) {
@@ -9945,7 +9931,7 @@ mod tests {
         render_config_report, render_diff_report, render_diff_report_for, render_memory_report,
         split_error_hint,
         render_help_topic, render_prompt_history_report, render_repl_help, render_resume_usage,
-        render_session_markdown, resolve_model_alias, resolve_model_alias_with_config,
+        render_session_markdown, resolve_model_alias_with_config,
         resolve_repl_model, resolve_session_reference, response_to_events,
         resume_supported_slash_commands, run_resume_command, short_tool_id,
         slash_command_completion_candidates_with_sessions, status_context,
@@ -10432,7 +10418,7 @@ mod tests {
         let args = vec![
             "--output-format=json".to_string(),
             "--model".to_string(),
-            "opus".to_string(),
+            "deepseek-ai/deepseek-v4-pro".to_string(),
             "explain".to_string(),
             "this".to_string(),
         ];
@@ -10501,12 +10487,12 @@ mod tests {
     }
 
     #[test]
-    fn resolves_model_aliases_in_args() {
+    fn resolves_model_in_args() {
         let _guard = env_lock();
         std::env::remove_var("NIMCODE_PERMISSION_MODE");
         let args = vec![
             "--model".to_string(),
-            "opus".to_string(),
+            "nvidia_nim/deepseek-ai/deepseek-v4-pro".to_string(),
             "explain".to_string(),
             "this".to_string(),
         ];
@@ -10527,15 +10513,13 @@ mod tests {
     }
 
     #[test]
-    fn resolves_known_model_aliases() {
-        assert_eq!(resolve_model_alias("opus"), "deepseek-ai/deepseek-v4-pro");
-        assert_eq!(resolve_model_alias("sonnet"), "deepseek-ai/deepseek-v4-pro");
+    fn resolve_model_strips_namespace() {
         assert_eq!(
-            resolve_model_alias("haiku"),
-            "deepseek-ai/deepseek-v4-flash"
+            api::resolve_model_alias("nvidia_nim/qwen/qwen3.5-122b-a10b"),
+            "qwen/qwen3.5-122b-a10b"
         );
         assert_eq!(
-            resolve_model_alias("deepseek-ai/deepseek-v4-pro"),
+            api::resolve_model_alias("deepseek-ai/deepseek-v4-pro"),
             "deepseek-ai/deepseek-v4-pro"
         );
     }
@@ -10551,7 +10535,7 @@ mod tests {
         std::fs::create_dir_all(&config_home).expect("config home should exist");
         std::fs::write(
             cwd.join(".nimcode").join("settings.json"),
-            r#"{"aliases":{"fast":"z-ai/glm5","smart":"opus","cheap":"moonshotai/kimi-k2.5"}}"#,
+            r#"{"aliases":{"fast":"z-ai/glm5","cheap":"moonshotai/kimi-k2.5"}}"#,
         )
         .expect("project config should write");
 
@@ -10560,10 +10544,8 @@ mod tests {
 
         // when
         let direct = with_current_dir(&cwd, || resolve_model_alias_with_config("fast"));
-        let chained = with_current_dir(&cwd, || resolve_model_alias_with_config("smart"));
         let cross_provider = with_current_dir(&cwd, || resolve_model_alias_with_config("cheap"));
         let unknown = with_current_dir(&cwd, || resolve_model_alias_with_config("unknown-model"));
-        let builtin = with_current_dir(&cwd, || resolve_model_alias_with_config("haiku"));
 
         match original_config_home {
             Some(value) => std::env::set_var("NIMCODE_CONFIG_HOME", value),
@@ -10573,10 +10555,8 @@ mod tests {
 
         // then
         assert_eq!(direct, "z-ai/glm5");
-        assert_eq!(chained, "deepseek-ai/deepseek-v4-pro");
         assert_eq!(cross_provider, "moonshotai/kimi-k2.5");
         assert_eq!(unknown, "unknown-model");
-        assert_eq!(builtin, "z-ai/glm5");
     }
 
     #[test]
@@ -10925,20 +10905,20 @@ mod tests {
         // JSON can report provenance (source: flag, raw: <user-input>).
         match parse_args(&[
             "--model".to_string(),
-            "sonnet".to_string(),
+            "deepseek-ai/deepseek-v4-pro".to_string(),
             "status".to_string(),
         ])
-        .expect("--model sonnet status should parse")
+        .expect("--model vendor/model status should parse")
         {
             CliAction::Status {
                 model,
                 model_flag_raw,
                 ..
             } => {
-                assert_eq!(model, "deepseek-ai/deepseek-v4-pro", "sonnet alias should resolve");
+                assert_eq!(model, "deepseek-ai/deepseek-v4-pro");
                 assert_eq!(
                     model_flag_raw.as_deref(),
-                    Some("sonnet"),
+                    Some("deepseek-ai/deepseek-v4-pro"),
                     "raw flag input should be preserved"
                 );
             }
@@ -10956,7 +10936,7 @@ mod tests {
                 model_flag_raw,
                 ..
             } => {
-                assert_eq!(model, "nvidia_nim/deepseek-ai/deepseek-v4-pro");
+                assert_eq!(model, "deepseek-ai/deepseek-v4-pro");
                 assert_eq!(
                     model_flag_raw.as_deref(),
                     Some("nvidia_nim/deepseek-ai/deepseek-v4-pro"),
@@ -11641,13 +11621,10 @@ mod tests {
     fn multi_word_prompt_still_uses_shorthand_prompt_mode() {
         let _guard = env_lock();
         std::env::remove_var("NIMCODE_PERMISSION_MODE");
-        // Input is ["--model", "opus", "please", "debug", "this"] so the joined
-        // prompt shorthand must stay a normal multi-word prompt while still
-        // honoring alias validation at parse time.
         assert_eq!(
             parse_args(&[
                 "--model".to_string(),
-                "opus".to_string(),
+                "deepseek-ai/deepseek-v4-pro".to_string(),
                 "please".to_string(),
                 "debug".to_string(),
                 "this".to_string(),
@@ -12139,14 +12116,12 @@ mod tests {
     #[test]
     fn completion_candidates_include_workflow_shortcuts_and_dynamic_sessions() {
         let completions = slash_command_completion_candidates_with_sessions(
-            "sonnet",
+            "qwen/qwen3.5-122b-a10b",
             Some("session-current"),
             vec!["session-old".to_string()],
         );
 
-        // After the NIM-only refactor, the `sonnet` alias resolves to a NIM
-        // model id rather than `claude-sonnet-4-6`.
-        assert!(completions.contains(&"/model deepseek-ai/deepseek-v4-pro".to_string()));
+        assert!(completions.contains(&"/model qwen/qwen3.5-122b-a10b".to_string()));
         assert!(completions.contains(&"/permissions workspace-write".to_string()));
         assert!(completions.contains(&"/session list".to_string()));
         assert!(completions.contains(&"/session switch session-current".to_string()));
@@ -12222,9 +12197,7 @@ mod tests {
         fs::create_dir_all(&config_home).expect("config home dir");
         std::env::set_var("NIMCODE_CONFIG_HOME", &config_home);
         std::env::remove_var("ANTHROPIC_MODEL");
-        // ANTHROPIC_MODEL is preserved as a back-compatible env name; the
-        // value flows through the NIM-only alias resolver.
-        std::env::set_var("ANTHROPIC_MODEL", "sonnet");
+        std::env::set_var("ANTHROPIC_MODEL", "deepseek-ai/deepseek-v4-pro");
 
         let resolved = with_current_dir(&root, || resolve_repl_model(DEFAULT_MODEL.to_string()));
 

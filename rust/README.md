@@ -35,17 +35,15 @@ export NVIDIA_NIM_BASE_URL="https://integrate.api.nvidia.com/v1"
 export NIMCODE_LANG="zh"
 ```
 
-## 模型别名
+## 模型选择
 
-| 别名 | 实际模型 |
-|------|----------|
-| `opus`, `sonnet` | `deepseek-ai/deepseek-v4-pro` |
-| `haiku` | `deepseek-ai/deepseek-v4-flash` |
-| `deepseek`, `deepseek-v4` | `deepseek-ai/deepseek-v4-pro` |
-| `kimi`, `kimi-k2` | `moonshotai/kimi-k2.5` |
-| `glm`, `glm5` | `z-ai/glm-5.1` |
-| `qwen`, `qwen-coder` | `qwen/qwen3-coder-480b-a35b-instruct` |
-| `minimax` | `minimaxai/minimax-m2.5` |
+默认模型为 `qwen/qwen3.5-122b-a10b`。使用 `/model` 命令可模糊搜索并切换任意 NIM 平台模型，例如：
+
+```
+/model deepseek      # 模糊搜索含 "deepseek" 的模型
+/model kimi          # 模糊搜索含 "kimi" 的模型
+/model list          # 列出全部可用模型
+```
 
 ## Workspace 布局
 

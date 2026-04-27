@@ -15,8 +15,8 @@ pub struct CompactionConfig {
 impl Default for CompactionConfig {
     fn default() -> Self {
         Self {
-            preserve_recent_messages: 4,
-            max_estimated_tokens: 10_000,
+            preserve_recent_messages: 20,
+            max_estimated_tokens: 80_000,
         }
     }
 }
@@ -234,14 +234,9 @@ fn summarize_messages(messages: &[ConversationMessage]) -> String {
         lines.push(format!("- Tools mentioned: {}.", tool_names.join(", ")));
     }
 
-    let recent_user_requests = collect_recent_role_summaries(messages, MessageRole::User, 3);
-    if !recent_user_requests.is_empty() {
-        lines.push("- Recent user requests:".to_string());
-        lines.extend(
-            recent_user_requests
-                .into_iter()
-                .map(|request| format!("  - {request}")),
-        );
+    let key_files = collect_key_files(messages);
+    if !key_files.is_empty() {
+        lines.push(format!("- Key files referenced: {}.", key_files.join(", ")));
     }
 
     let pending_work = infer_pending_work(messages);
@@ -250,16 +245,12 @@ fn summarize_messages(messages: &[ConversationMessage]) -> String {
         lines.extend(pending_work.into_iter().map(|item| format!("  - {item}")));
     }
 
-    let key_files = collect_key_files(messages);
-    if !key_files.is_empty() {
-        lines.push(format!("- Key files referenced: {}.", key_files.join(", ")));
-    }
-
     if let Some(current_work) = infer_current_work(messages) {
         lines.push(format!("- Current work: {current_work}"));
     }
 
-    lines.push("- Key timeline:".to_string());
+    lines.push(String::new());
+    lines.push("- Detailed conversation history:".to_string());
     for message in messages {
         let role = match message.role {
             MessageRole::System => "system",
@@ -267,13 +258,18 @@ fn summarize_messages(messages: &[ConversationMessage]) -> String {
             MessageRole::Assistant => "assistant",
             MessageRole::Tool => "tool",
         };
+        let budget = match message.role {
+            MessageRole::User => 800,
+            MessageRole::Assistant => 500,
+            _ => 200,
+        };
         let content = message
             .blocks
             .iter()
-            .map(summarize_block)
+            .map(|b| summarize_block_with_budget(b, budget))
             .collect::<Vec<_>>()
             .join(" | ");
-        lines.push(format!("  - {role}: {content}"));
+        lines.push(format!("  [{role}] {content}"));
     }
     lines.push("</summary>".to_string());
     lines.join("\n")
@@ -315,20 +311,32 @@ fn merge_compact_summaries(existing_summary: Option<&str>, new_summary: &str) ->
 }
 
 fn summarize_block(block: &ContentBlock) -> String {
+    summarize_block_with_budget(block, 160)
+}
+
+fn summarize_block_with_budget(block: &ContentBlock, budget: usize) -> String {
     let raw = match block {
         ContentBlock::Text { text } => text.clone(),
-        ContentBlock::ToolUse { name, input, .. } => format!("tool_use {name}({input})"),
+        ContentBlock::ToolUse { name, input, .. } => {
+            let input_str = input.to_string();
+            let input_budget = budget.saturating_sub(name.len() + 12);
+            format!("tool_use {name}({})", truncate_summary(&input_str, input_budget))
+        }
         ContentBlock::ToolResult {
             tool_name,
             output,
             is_error,
             ..
-        } => format!(
-            "tool_result {tool_name}: {}{output}",
-            if *is_error { "error " } else { "" }
-        ),
+        } => {
+            let prefix = if *is_error { "error " } else { "" };
+            let output_budget = budget.saturating_sub(tool_name.len() + prefix.len() + 15);
+            format!(
+                "tool_result {tool_name}: {prefix}{}",
+                truncate_summary(output, output_budget)
+            )
+        }
     };
-    truncate_summary(&raw, 160)
+    truncate_summary(&raw, budget)
 }
 
 fn collect_recent_role_summaries(

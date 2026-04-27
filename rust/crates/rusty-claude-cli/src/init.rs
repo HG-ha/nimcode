@@ -420,7 +420,7 @@ mod tests {
         assert!(gitignore.contains(".clawhip/"));
         let nimcode_md = fs::read_to_string(root.join("NIMCODE.md")).expect("read nimcode md");
         assert!(nimcode_md.contains("Languages: Rust."));
-        assert!(claude_md.contains("cargo clippy --workspace --all-targets -- -D warnings"));
+        assert!(nimcode_md.contains("cargo clippy --workspace --all-targets -- -D warnings"));
 
         fs::remove_dir_all(root).expect("cleanup temp dir");
     }

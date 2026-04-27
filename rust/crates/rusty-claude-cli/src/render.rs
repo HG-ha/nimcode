@@ -249,6 +249,10 @@ impl TerminalRenderer {
 
     #[must_use]
     pub fn render_markdown(&self, markdown: &str) -> String {
+        self.render_markdown_inner(markdown, true)
+    }
+
+    fn render_markdown_inner(&self, markdown: &str, trim_trailing: bool) -> String {
         let normalized = normalize_nested_fences(markdown);
         let mut output = String::new();
         let mut state = RenderState::default();
@@ -267,12 +271,21 @@ impl TerminalRenderer {
             );
         }
 
-        output.trim_end().to_string()
+        if trim_trailing {
+            output.trim_end().to_string()
+        } else {
+            output
+        }
     }
 
     #[must_use]
     pub fn markdown_to_ansi(&self, markdown: &str) -> String {
         self.render_markdown(markdown)
+    }
+
+    #[must_use]
+    pub fn markdown_to_ansi_streaming(&self, markdown: &str) -> String {
+        self.render_markdown_inner(markdown, false)
     }
 
     #[allow(clippy::too_many_lines)]
@@ -609,7 +622,7 @@ impl MarkdownStreamState {
         let split = find_stream_safe_boundary(&self.pending)?;
         let ready = self.pending[..split].to_string();
         self.pending.drain(..split);
-        Some(renderer.markdown_to_ansi(&ready))
+        Some(renderer.markdown_to_ansi_streaming(&ready))
     }
 
     #[must_use]
