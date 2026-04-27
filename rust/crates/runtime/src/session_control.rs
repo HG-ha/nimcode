@@ -158,9 +158,12 @@ impl SessionStore {
     }
 
     pub fn latest_session(&self) -> Result<ManagedSessionSummary, SessionControlError> {
-        self.list_sessions()?
-            .into_iter()
-            .next()
+        let sessions = self.list_sessions()?;
+        sessions
+            .iter()
+            .find(|s| s.message_count > 0)
+            .or_else(|| sessions.first())
+            .cloned()
             .ok_or_else(|| SessionControlError::Format(format_no_managed_sessions(&self.sessions_root)))
     }
 
