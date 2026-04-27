@@ -179,17 +179,27 @@ impl SystemPromptBuilder {
             || "unknown".to_string(),
             |context| context.current_date.clone(),
         );
+        let os = self.os_name.as_deref().unwrap_or("unknown");
+        let os_ver = self.os_version.as_deref().unwrap_or("unknown");
         let mut lines = vec!["# Environment context".to_string()];
         lines.extend(prepend_bullets(vec![
             format!("Model family: {FRONTIER_MODEL_NAME}"),
             format!("Working directory: {cwd}"),
             format!("Date: {date}"),
-            format!(
-                "Platform: {} {}",
-                self.os_name.as_deref().unwrap_or("unknown"),
-                self.os_version.as_deref().unwrap_or("unknown")
-            ),
+            format!("Platform: {os} {os_ver}"),
         ]));
+        if os == "windows" {
+            lines.push(String::new());
+            lines.push("## Windows shell guidelines".to_string());
+            lines.extend(prepend_bullets(vec![
+                "The bash tool runs commands via `cmd.exe`, NOT Unix sh/bash.".to_string(),
+                "Do NOT use Unix commands: `ls`, `cat`, `head`, `tail`, `grep`, `find`, `rm`, `cp`, `mv`, `mkdir -p`, `chmod`, `wc`, `sed`, `awk`, `tr`, `xargs`.".to_string(),
+                "Use Windows equivalents: `dir`, `type`, `findstr`, `where`, `del`, `copy`, `move`, `mkdir`, `ren`.".to_string(),
+                "Use `&&` is NOT supported in cmd.exe for chaining; use `&` instead.".to_string(),
+                "For complex tasks, prefer `powershell -Command \"...\"` or use the edit_file / read_file / write_file tools instead of shell commands.".to_string(),
+                "Path separators: use `\\` in cmd.exe commands.".to_string(),
+            ]));
+        }
         lines.join("\n")
     }
 }
