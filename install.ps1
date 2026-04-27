@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Stop"
 $repo = "HG-ha/nimcode"
 $binary = "nimcode.exe"
+$installDir = "$env:USERPROFILE\.nimcode\bin"
 
 Write-Host "NimCode installer" -ForegroundColor Cyan
 Write-Host ""
@@ -18,13 +19,38 @@ if (-not $version) {
     exit 1
 }
 
+# Check installed version
+$installedVersion = ""
+$existingBinary = Join-Path $installDir $binary
+if (Test-Path $existingBinary) {
+    try {
+        $versionOutput = & $existingBinary --version 2>&1
+        if ($versionOutput -match '(\d+\.\d+\.\d+)') {
+            $installedVersion = $Matches[1]
+        }
+    } catch {}
+}
+
+if ($installedVersion -and ($installedVersion -eq $version)) {
+    Write-Host "  nimcode v$version is already installed and up to date." -ForegroundColor Green
+    Write-Host "  To force reinstall, run: .\install.ps1 $version"
+    Write-Host ""
+    exit 0
+}
+
+if ($installedVersion) {
+    $action = "Upgrading"
+    Write-Host "  Installed : v$installedVersion"
+} else {
+    $action = "Installing"
+}
+
 $target = "x86_64-pc-windows-msvc"
 $url = "https://github.com/$repo/releases/download/v$version/nimcode-$target.zip"
-$installDir = "$env:USERPROFILE\.nimcode\bin"
 
-Write-Host "  Version : v$version"
-Write-Host "  Target  : $target"
-Write-Host "  Install : $installDir\$binary"
+Write-Host "  $action  : v$version"
+Write-Host "  Target    : $target"
+Write-Host "  Location  : $installDir\$binary"
 Write-Host ""
 
 # Download
@@ -53,6 +79,10 @@ if ($userPath -notlike "*$installDir*") {
 Remove-Item -Recurse -Force $tmpDir
 
 Write-Host ""
-Write-Host "nimcode v$version installed to $installDir\$binary" -ForegroundColor Green
-Write-Host ""
-Write-Host "Run 'nimcode' to get started. It will prompt for your NVIDIA NIM API Key on first launch."
+if ($installedVersion) {
+    Write-Host "nimcode upgraded from v$installedVersion to v$version" -ForegroundColor Green
+} else {
+    Write-Host "nimcode v$version installed to $installDir\$binary" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Run 'nimcode' to get started. It will prompt for your NVIDIA NIM API Key on first launch."
+}

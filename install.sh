@@ -30,8 +30,16 @@ detect_target() {
   echo "${arch}-${os}"
 }
 
+get_installed_version() {
+  if command -v "$BINARY" &>/dev/null; then
+    "$BINARY" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo ""
+  else
+    echo ""
+  fi
+}
+
 main() {
-  local version target url tmpdir
+  local version target url tmpdir installed_version action
 
   echo "NimCode installer"
   echo ""
@@ -42,12 +50,26 @@ main() {
     exit 1
   fi
 
+  installed_version="$(get_installed_version)"
+  if [ -n "$installed_version" ]; then
+    if [ "$installed_version" = "$version" ]; then
+      echo "  nimcode v${version} is already installed and up to date."
+      echo "  To force reinstall, run: $0 ${version}"
+      echo ""
+      exit 0
+    fi
+    action="Upgrading"
+    echo "  Installed : v${installed_version}"
+  else
+    action="Installing"
+  fi
+
   target="$(detect_target)"
   url="https://github.com/${REPO}/releases/download/v${version}/nimcode-${target}.tar.gz"
 
-  echo "  Version : v${version}"
-  echo "  Target  : ${target}"
-  echo "  Install : ${INSTALL_DIR}/${BINARY}"
+  echo "  ${action}  : v${version}"
+  echo "  Target    : ${target}"
+  echo "  Location  : ${INSTALL_DIR}/${BINARY}"
   echo ""
 
   tmpdir="$(mktemp -d)"
@@ -68,9 +90,13 @@ main() {
   chmod +x "${INSTALL_DIR}/${BINARY}"
 
   echo ""
-  echo "✓ nimcode v${version} installed to ${INSTALL_DIR}/${BINARY}"
-  echo ""
-  echo "Run 'nimcode' to get started. It will prompt for your NVIDIA NIM API Key on first launch."
+  if [ -n "$installed_version" ]; then
+    echo "✓ nimcode upgraded from v${installed_version} to v${version}"
+  else
+    echo "✓ nimcode v${version} installed to ${INSTALL_DIR}/${BINARY}"
+    echo ""
+    echo "Run 'nimcode' to get started. It will prompt for your NVIDIA NIM API Key on first launch."
+  fi
 }
 
 main "$@"
