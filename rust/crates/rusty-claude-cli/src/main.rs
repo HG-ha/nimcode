@@ -23,6 +23,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
+
 use api::{
     detect_provider_kind, ContentBlockDelta, InputContentBlock, InputMessage, MessageRequest,
     MessageResponse, OutputContentBlock, ProviderClient as ApiProviderClient, ProviderKind,
@@ -5051,6 +5052,10 @@ impl LiveCli {
             }
             Err(error) => {
                 runtime.shutdown_plugins()?;
+        // 即使请求失败也要保存会话，这样用户输入不会丢失
+        if let Err(save_error) = self.persist_session() {
+            eprintln!("warning: failed to persist session after error: {save_error}");
+        }
                 spinner.fail(
                     "❌ Request failed",
                     TerminalRenderer::new().color_theme(),
@@ -8679,6 +8684,10 @@ impl AnthropicRuntimeClient {
                         }
                     }
                     ContentBlockDelta::ThinkingDelta { .. } => {
+        // 显示思考状态提示，让用户知道模型正在思考
+        if let Some(progress_reporter) = &self.progress_reporter {
+            progress_reporter.mark_model_phase();
+        }
                         if !block_has_thinking_summary {
                             render_thinking_block_summary(out, None, false)?;
                             block_has_thinking_summary = true;

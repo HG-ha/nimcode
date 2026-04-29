@@ -31,7 +31,7 @@ checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
 
 [[package]]
 name = "api"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "criterion",
  "reqwest",
@@ -187,7 +187,7 @@ dependencies = [
 
 [[package]]
 name = "commands"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "plugins",
  "runtime",
@@ -196,7 +196,7 @@ dependencies = [
 
 [[package]]
 name = "compat-harness"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "commands",
  "runtime",
@@ -917,7 +917,7 @@ dependencies = [
 
 [[package]]
 name = "nimcode-cli"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "api",
  "commands",
@@ -949,7 +949,7 @@ dependencies = [
 
 [[package]]
 name = "num-conv"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c6673768db2d862beb9b39a78fdcb1a69439615d5794a1be50caa9bc92c81967"
 
@@ -1080,7 +1080,7 @@ dependencies = [
 
 [[package]]
 name = "plugins"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -1219,7 +1219,7 @@ checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
 
 [[package]]
 name = "radix_trie"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c069c179fcdc6a2fe24d8d18305cf085fdbd4f922c041943e203685d6a1c58fd"
 dependencies = [
@@ -1370,7 +1370,7 @@ dependencies = [
 
 [[package]]
 name = "runtime"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "glob",
  "plugins",
@@ -1705,7 +1705,7 @@ dependencies = [
 
 [[package]]
 name = "telemetry"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -1836,7 +1836,7 @@ dependencies = [
 
 [[package]]
 name = "tools"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "api",
  "commands",
@@ -2136,7 +2136,7 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "windows-link"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
 

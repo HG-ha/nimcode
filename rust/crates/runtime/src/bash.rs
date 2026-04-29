@@ -254,7 +254,8 @@ fn prepare_command(
     sandbox_status: &SandboxStatus,
     create_dirs: bool,
 ) -> Command {
-    if create_dirs {
+        // 只在沙盒文件系统激活且需要创建目录时才创建 sandbox 目录
+    if create_dirs && sandbox_status.filesystem_active {
         prepare_sandbox_dirs(cwd);
     }
 
@@ -282,9 +283,9 @@ fn prepare_command(
     if sandbox_status.filesystem_active {
         #[cfg(not(windows))]
         {
-            prepared.env("HOME", cwd.join(".sandbox-home"));
+            prepared.env("HOME", cwd.join(".nimcode").join("sandbox-home"));
         }
-        prepared.env("TMPDIR", cwd.join(".sandbox-tmp"));
+        prepared.env("TMPDIR", cwd.join(".nimcode").join("sandbox-tmp"));
     }
     prepared
 }
@@ -295,7 +296,8 @@ fn prepare_tokio_command(
     sandbox_status: &SandboxStatus,
     create_dirs: bool,
 ) -> TokioCommand {
-    if create_dirs {
+        // 只在沙盒文件系统激活且需要创建目录时才创建 sandbox 目录
+    if create_dirs && sandbox_status.filesystem_active {
         prepare_sandbox_dirs(cwd);
     }
 
@@ -323,16 +325,16 @@ fn prepare_tokio_command(
     if sandbox_status.filesystem_active {
         #[cfg(not(windows))]
         {
-            prepared.env("HOME", cwd.join(".sandbox-home"));
+            prepared.env("HOME", cwd.join(".nimcode").join("sandbox-home"));
         }
-        prepared.env("TMPDIR", cwd.join(".sandbox-tmp"));
+        prepared.env("TMPDIR", cwd.join(".nimcode").join("sandbox-tmp"));
     }
     prepared
 }
 
 fn prepare_sandbox_dirs(cwd: &std::path::Path) {
-    let _ = std::fs::create_dir_all(cwd.join(".sandbox-home"));
-    let _ = std::fs::create_dir_all(cwd.join(".sandbox-tmp"));
+ let _ = std::fs::create_dir_all(cwd.join(".nimcode").join("sandbox-home"));
+ let _ = std::fs::create_dir_all(cwd.join(".nimcode").join("sandbox-tmp"));
 }
 
 #[cfg(test)]
